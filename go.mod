@@ -1,3 +1,3 @@
-module github.com/roman-mazur/design-practice-2-template
+module github.com/AlmostGreatBand/KPI2-2
 
 go 1.15
