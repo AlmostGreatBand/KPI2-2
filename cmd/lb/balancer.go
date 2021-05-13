@@ -15,17 +15,6 @@ import (
 	"github.com/AlmostGreatBand/KPI2-2/signal"
 )
 
-type server struct {
-	Url string
-	Connections int32
-	Available bool
-}
-
-type serverPool struct {
-	mutex *sync.Mutex
-	servers []*server
-}
-
 var (
 	port = flag.Int("port", 8090, "load balancer port")
 	timeoutSec = flag.Int("timeout-sec", 4, "request timeout time in seconds")
@@ -100,20 +89,22 @@ func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
 func main() {
 	flag.Parse()
 
-	// Set up connections
-	var servers []*server
+	var servers []*Server
 	for _, url := range serverUrls {
-		servers = append(servers, &server { Url: url, Available: true, Connections: 0})
+		servers = append(servers, &Server{ Url: url, Available: true, Connections: 0})
 	}
 
-	serverPool := serverPool { servers: servers, mutex: new(sync.Mutex) }
+	serverPool := ServerPool{ Servers: servers, Mutex: new(sync.Mutex) }
 
-	// TODO: Використовуйте дані про стан сервреа, щоб підтримувати список тих серверів, яким можна відправляти ззапит.
 	for _, server := range servers {
 		server := server
 		go func() {
 			for range time.Tick(10 * time.Second) {
-				server.Available = health(server.Url)
+				av := health(server.Url)
+				server.Available = av
+				if !av {
+					server.Connections = 0
+				}
 			}
 		}()
 	}
@@ -127,6 +118,7 @@ func main() {
 			return
 		}
 
+		server.Connections++
 		forward(server.Url, rw, r)
 		server.Connections--
 	}))
@@ -137,11 +129,12 @@ func main() {
 	signal.WaitForTerminationSignal()
 }
 
-func (sp *serverPool) getMinConnectionsAvailable() (*server, error) {
-	sp.mutex.Lock()
+func (sp *ServerPool) getMinConnectionsAvailable() (*Server, error) {
+	sp.Mutex.Lock()
+	defer sp.Mutex.Unlock()
 
-	var filtered []*server
-	for _, server := range sp.servers {
+	var filtered []*Server
+	for _, server := range sp.Servers {
 		if server.Available {
 			filtered = append(filtered, server)
 		}
@@ -159,20 +152,5 @@ func (sp *serverPool) getMinConnectionsAvailable() (*server, error) {
 		}
 	}
 
-	min.Connections++
-	sp.mutex.Unlock()
-
 	return min, nil
-}
-
-func (s *server) toString() string {
-	return fmt.Sprintf("Url: %s; Conn: %d; Available: %v", s.Url, s.Connections, s.Available)
-}
-
-func (sp *serverPool) toString() string {
-	res := ""
-	for i, s := range sp.servers {
-		res += fmt.Sprintf("%v: %v \n", i, s.toString())
-	}
-	return res
 }

@@ -6,8 +6,8 @@ tested_binary {
     "signal/**/*.go",
     "cmd/server/*.go"
   ],
-  testPkg: "./cmd/lb",
-  testSrcs: ["**/balancer_test.go"]
+  testPkg: "./cmd/server",
+  testSrcs: ["**/report_test.go"]
 }
 
 tested_binary {
@@ -20,7 +20,6 @@ tested_binary {
   ],
   testPkg: "./cmd/lb",
   testSrcs: ["**/balancer_test.go"]
-  // TODO: Додайте запуск тестів для балансувальника.
 }
 
 // TODO: Додайте модуль для інтеграційних тестів.
