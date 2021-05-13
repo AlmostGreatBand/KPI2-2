@@ -28,7 +28,7 @@ type serverPool struct {
 
 var (
 	port = flag.Int("port", 8090, "load balancer port")
-	timeoutSec = flag.Int("timeout-sec", 3, "request timeout time in seconds")
+	timeoutSec = flag.Int("timeout-sec", 4, "request timeout time in seconds")
 	https = flag.Bool("https", false, "whether backends support HTTPs")
 
 	traceEnabled = flag.Bool("trace", false, "whether to include tracing information into responses")
@@ -119,18 +119,16 @@ func main() {
 	}
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		fmt.Println(serverPool.toString())
+
 		server, err := serverPool.getMinConnectionsAvailable()
 		if err != nil {
 			fmt.Print(err.Error())
 			return
 		}
 
-		fmt.Println("-------------------")
-
-		fmt.Println(serverPool.toString())
-		server.Connections += 1
 		forward(server.Url, rw, r)
-		server.Connections -= 1
+		server.Connections--
 	}))
 
 	log.Println("Starting load balancer...")
@@ -141,7 +139,6 @@ func main() {
 
 func (sp *serverPool) getMinConnectionsAvailable() (*server, error) {
 	sp.mutex.Lock()
-	defer sp.mutex.Unlock()
 
 	var filtered []*server
 	for _, server := range sp.servers {
@@ -161,6 +158,9 @@ func (sp *serverPool) getMinConnectionsAvailable() (*server, error) {
 			min = server
 		}
 	}
+
+	min.Connections++
+	sp.mutex.Unlock()
 
 	return min, nil
 }
