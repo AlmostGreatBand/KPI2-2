@@ -7,6 +7,4 @@ RUN go get -u github.com/AlmostGreatBand/build/cmd/bood
 WORKDIR /go/src/practice-2
 COPY . .
 
-# TODO: Замініть на запуск bood, який призводить до виконання інтеграційних тестів.
-# ENTRYPOINT ["bood", "integration-tests"]
-ENTRYPOINT ["echo", "ok"]
+ENTRYPOINT ["bood", "integration-tests"]
