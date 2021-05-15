@@ -1,25 +1,30 @@
 tested_binary {
   name: "server",
-  pkg: "github.com/AlmostGreatBand/KPI2-2/cmd/server",
+  pkg: "./cmd/server",
   srcs: [
     "httptools/**/*.go",
     "signal/**/*.go",
     "cmd/server/*.go"
   ],
   testPkg: "./cmd/server",
-  testSrcs: ["**/report_test.go"]
+  testSrcs: ["./cmd/server/*_test.go"]
 }
 
 tested_binary {
   name: "lb",
-  pkg: "github.com/AlmostGreatBand/KPI2-2/cmd/lb",
+  pkg: "./cmd/lb",
   srcs: [
     "httptools/**/*.go",
     "signal/**/*.go",
     "cmd/lb/*.go"
   ],
   testPkg: "./cmd/lb",
-  testSrcs: ["**/balancer_test.go"]
+  testSrcs: ["./cmd/lb/*_test.go"]
 }
 
-// TODO: Додайте модуль для інтеграційних тестів.
+tested_binary {
+    name: "integration_tests",
+    testPkg: "./integration",
+    testSrcs: ["./integration/*_test.go"],
+    optional: true
+}
