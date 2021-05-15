@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/roman-mazur/design-practice-2-template/httptools"
-	"github.com/roman-mazur/design-practice-2-template/signal"
+	"github.com/AlmostGreatBand/KPI2-2/httptools"
+	"github.com/AlmostGreatBand/KPI2-2/signal"
 )
 
 var port = flag.Int("port", 8080, "server port")
@@ -34,6 +34,7 @@ func main() {
 	report := make(Report)
 
 	h.HandleFunc("/api/v1/some-data", func(rw http.ResponseWriter, r *http.Request) {
+		os.Setenv(confResponseDelaySec, "3")
 		respDelayString := os.Getenv(confResponseDelaySec)
 		if delaySec, parseErr := strconv.Atoi(respDelayString); parseErr == nil && delaySec > 0 && delaySec < 300 {
 			time.Sleep(time.Duration(delaySec) * time.Second)

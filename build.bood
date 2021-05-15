@@ -1,24 +1,25 @@
-go_binary {
+tested_binary {
   name: "server",
-  // TODO: Відкорегуйте ім'я пакета.
-  pkg: "github.com/roman-mazur/design-practice-2-template/cmd/server",
+  pkg: "github.com/AlmostGreatBand/KPI2-2/cmd/server",
   srcs: [
     "httptools/**/*.go",
     "signal/**/*.go",
     "cmd/server/*.go"
-  ]
+  ],
+  testPkg: "./cmd/server",
+  testSrcs: ["**/report_test.go"]
 }
 
-go_binary {
+tested_binary {
   name: "lb",
-  // TODO: Відкорегуйте ім'я пакета.
-  pkg: "github.com/roman-mazur/design-practice-2-template/cmd/lb",
+  pkg: "github.com/AlmostGreatBand/KPI2-2/cmd/lb",
   srcs: [
     "httptools/**/*.go",
     "signal/**/*.go",
     "cmd/lb/*.go"
-  ]
-  // TODO: Додайте запуск тестів для балансувальника.
+  ],
+  testPkg: "./cmd/lb",
+  testSrcs: ["**/balancer_test.go"]
 }
 
 // TODO: Додайте модуль для інтеграційних тестів.

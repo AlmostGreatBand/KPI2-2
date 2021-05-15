@@ -2,20 +2,22 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
-	"github.com/roman-mazur/design-practice-2-template/httptools"
-	"github.com/roman-mazur/design-practice-2-template/signal"
+	"github.com/AlmostGreatBand/KPI2-2/httptools"
+	"github.com/AlmostGreatBand/KPI2-2/signal"
 )
 
 var (
 	port = flag.Int("port", 8090, "load balancer port")
-	timeoutSec = flag.Int("timeout-sec", 3, "request timeout time in seconds")
+	timeoutSec = flag.Int("timeout-sec", 4, "request timeout time in seconds")
 	https = flag.Bool("https", false, "whether backends support HTTPs")
 
 	traceEnabled = flag.Bool("trace", false, "whether to include tracing information into responses")
@@ -23,7 +25,7 @@ var (
 
 var (
 	timeout = time.Duration(*timeoutSec) * time.Second
-	serversPool = []string{
+	serverUrls = []string {
 		"server1:8080",
 		"server2:8080",
 		"server3:8080",
@@ -87,23 +89,68 @@ func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
 func main() {
 	flag.Parse()
 
-	// TODO: Використовуйте дані про стан сервреа, щоб підтримувати список тих серверів, яким можна відправляти ззапит.
-	for _, server := range serversPool {
+	var servers []*Server
+	for _, url := range serverUrls {
+		servers = append(servers, &Server{ Url: url, Available: true, Connections: 0})
+	}
+
+	serverPool := ServerPool{ Servers: servers, Mutex: new(sync.Mutex) }
+
+	for _, server := range servers {
 		server := server
 		go func() {
 			for range time.Tick(10 * time.Second) {
-				log.Println(server, health(server))
+				av := health(server.Url)
+				server.Available = av
+				if !av {
+					server.Connections = 0
+				}
 			}
 		}()
 	}
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		// TODO: Рееалізуйте свій алгоритм балансувальника.
-		forward(serversPool[0], rw, r)
+		fmt.Println(serverPool.toString())
+
+		server, err := serverPool.getMinConnectionsAvailable()
+		if err != nil {
+			fmt.Print(err.Error())
+			return
+		}
+
+		server.Connections++
+		forward(server.Url, rw, r)
+		server.Connections--
 	}))
 
 	log.Println("Starting load balancer...")
 	log.Printf("Tracing support enabled: %t", *traceEnabled)
 	frontend.Start()
 	signal.WaitForTerminationSignal()
+}
+
+func (sp *ServerPool) getMinConnectionsAvailable() (*Server, error) {
+	sp.Mutex.Lock()
+	defer sp.Mutex.Unlock()
+
+	var filtered []*Server
+	for _, server := range sp.Servers {
+		if server.Available {
+			filtered = append(filtered, server)
+		}
+	}
+
+	if filtered == nil {
+		return nil, errors.New("no available servers")
+	}
+
+	min := filtered[0]
+
+	for _, server := range filtered[1:] {
+		if server.Connections < min.Connections {
+			min = server
+		}
+	}
+
+	return min, nil
 }
