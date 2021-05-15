@@ -10,5 +10,6 @@ script:
   - docker-compose -f docker-compose.yaml -f docker-compose.test.yaml up --exit-code-from test
 
 after_script:
+  - mkdir test
   - docker container ls -aq | xargs -I{} docker cp {}:/go/src/practice-2/out/test test/{}
   - find test -type f -printf '\n %p \n' -exec cat {} \+
