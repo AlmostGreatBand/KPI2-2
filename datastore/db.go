@@ -1,8 +1,6 @@
 package datastore
 
 import (
-	"bufio"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,20 +12,12 @@ import (
 	"sync"
 )
 
-const activeSuffix = "active"
-const mergedSuffix = "merged"
-const segmentPrefix = "segment-"
+
 const defMaxActiveSize = 10 * 1024 * 1024
 
 var ErrNotFound = fmt.Errorf("record does not exist")
 
 type hashIndex map[string]int64
-
-type segment struct {
-	path   string
-	offset int64
-	index  hashIndex
-}
 
 type putEntry struct {
 	entry *entry
@@ -142,54 +132,6 @@ func NewDbSizedMerge(dir string, activeBlockSize int64, autoMergeEnabled bool) (
 	return db, nil
 }
 
-const bufSize = 8192
-
-func (s *segment) recover() error {
-	input, err := os.Open(s.path)
-	if err != nil {
-		return err
-	}
-	defer input.Close()
-
-	var buf [bufSize]byte
-	in := bufio.NewReaderSize(input, bufSize)
-
-	for err == nil {
-		var (
-			header, data []byte
-			n            int
-		)
-		header, err = in.Peek(bufSize)
-		if err == io.EOF {
-			if len(header) == 0 {
-				return err
-			}
-		} else if err != nil {
-			return err
-		}
-		size := binary.LittleEndian.Uint32(header)
-
-		if size < bufSize {
-			data = buf[:size]
-		} else {
-			data = make([]byte, size)
-		}
-		n, err = in.Read(data)
-
-		if err == nil {
-			if n != int(size) {
-				return fmt.Errorf("corrupted file")
-			}
-
-			var e entry
-			e.Decode(data)
-			s.index[e.key] = s.offset
-			s.offset += int64(n)
-		}
-	}
-	return err
-}
-
 func (db *Db) Close() error {
 	db.mergeChan <- 0
 	db.putChan <- putEntry{ entry: nil }
@@ -212,36 +154,6 @@ func (db *Db) Get(key string) (string, error) {
 	}
 
 	return "", err
-}
-
-func (s *segment) get(key string) (string, error) {
-	var (
-		position int64
-		ok		 bool
-	)
-
-	if position, ok = s.index[key]; !ok {
-		return "", ErrNotFound
-	}
-
-	file, err := os.Open(s.path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	_, err = file.Seek(position, 0)
-	if err != nil {
-		return "", err
-	}
-
-	reader := bufio.NewReader(file)
-	value, err := readValue(reader)
-	if err != nil {
-		return "", err
-	}
-
-	return value, nil
 }
 
 func (db *Db) Put(key, value string) error {
