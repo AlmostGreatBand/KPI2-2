@@ -35,7 +35,7 @@ type putEntry struct {
 }
 
 type Db struct {
-	mux      *sync.Mutex
+	mux      *sync.RWMutex
 	out      *os.File
 
 	dir              string
@@ -109,7 +109,7 @@ func NewDbSizedMerge(dir string, activeBlockSize int64, autoMergeEnabled bool) (
 	putChan := make(chan putEntry)
 
 	db := &Db{
-		mux:              new(sync.Mutex),
+		mux:              new(sync.RWMutex),
 		out:              f,
 		dir:              dir,
 		activeBlockSize:  activeBlockSize,
@@ -119,17 +119,15 @@ func NewDbSizedMerge(dir string, activeBlockSize int64, autoMergeEnabled bool) (
 		putChan:          putChan,
 	}
 
-	if autoMergeEnabled {
-		go func() {
-			for el := range mergeChan {
-				if el == 0 {
-					return
-				}
-
-				db.merge()
+	go func() {
+		for el := range mergeChan {
+			if el == 0 {
+				return
 			}
-		}()
-	}
+
+			db.merge()
+		}
+	}()
 
 	go func() {
 		for el := range putChan {
@@ -199,8 +197,8 @@ func (db *Db) Close() error {
 }
 
 func (db *Db) Get(key string) (string, error) {
-	db.mux.Lock()
-	defer db.mux.Unlock()
+	db.mux.RLock()
+	defer db.mux.RUnlock()
 
 	var (
 		value	 string
@@ -260,7 +258,9 @@ func (db *Db) put(pe putEntry) {
 	defer db.mux.Unlock()
 
 	if len(db.segments) > 2 && db.autoMergeEnabled {
-		db.mergeChan <- 1
+		go func() {
+			db.mergeChan <- 1
+		}()
 	}
 
 	e := pe.entry

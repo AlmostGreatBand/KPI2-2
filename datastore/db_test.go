@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 var (
@@ -242,17 +243,20 @@ func TestDb_Concurrency(t *testing.T) {
 	for range morePairs {
 		<- resCh
 	}
-	//
-	//for _, pair := range morePairs {
-	//	value, err := db.Get(pair[0])
-	//	if err != nil {
-	//		t.Errorf("Cannot get %s: %s", pair[0], err)
-	//	}
-	//
-	//	if value != pair[1] {
-	//		t.Errorf("Bad value returned expected %s, got %s", pair[1], value)
-	//	}
-	//}
+
+	for _, pair := range morePairs {
+		value, err := db.Get(pair[0])
+		if err != nil {
+			t.Errorf("Cannot get %s: %s", pair[0], err)
+		}
+
+		if value != pair[1] {
+			t.Errorf("Bad value returned expected %s, got %s", pair[1], value)
+		}
+	}
+
+	// add this to check merging, but this should be checked manually, because time.Sleep isn't fully deterministic
+	time.Sleep(5 * time.Second)
 
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
