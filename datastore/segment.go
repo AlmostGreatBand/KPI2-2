@@ -12,6 +12,7 @@ const activeSuffix = "active"
 const mergedSuffix = "merged"
 const segmentPrefix = "segment-"
 const bufSize = 8192
+const deletedItemPos = -1
 
 type segment struct {
 	path   string
@@ -58,7 +59,13 @@ func (s *segment) recover() error {
 
 			var e entry
 			e.Decode(data)
-			s.index[e.key] = s.offset
+
+			if e.value == "" {
+				s.index[e.key] = deletedItemPos
+			} else {
+				s.index[e.key] = s.offset
+			}
+
 			s.offset += int64(n)
 		}
 	}
@@ -66,13 +73,14 @@ func (s *segment) recover() error {
 }
 
 func (s *segment) get(key string) (string, error) {
-	var (
-		position int64
-		ok		 bool
-	)
 
-	if position, ok = s.index[key]; !ok {
+	position, ok := s.index[key]
+	if !ok {
 		return "", ErrNotFound
+	}
+
+	if position == deletedItemPos {
+		return "", ErrItemDeleted
 	}
 
 	file, err := os.Open(s.path)

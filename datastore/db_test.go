@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 var (
@@ -212,7 +211,6 @@ func TestDb_Concurrency(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	db, err := NewDbSized(dir, 44)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,9 +254,74 @@ func TestDb_Concurrency(t *testing.T) {
 	}
 
 	// add this to check merging, but this should be checked manually, because time.Sleep isn't fully deterministic
-	time.Sleep(5 * time.Second)
+	//time.Sleep(5 * time.Second)
 
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDb_Delete(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test-db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	db, err := NewDbSizedMerge(dir, 46, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, pair := range morePairs {
+		err = db.Put(pair[0], pair[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deleteKey := morePairs[5][0]
+
+	err = db.Delete(deleteKey)
+	if err != nil {
+		t.Errorf("Cannot delete %s: %s", deleteKey, err)
+	}
+
+	value, err := db.Get(deleteKey)
+	if err != ErrNotFound && value != "" {
+		t.Errorf("Get value after it's being deleted %s: %s", deleteKey, err)
+	}
+
+	err = db.Delete(deleteKey)
+	if err != nil {
+		t.Errorf("Error occured while deleting item %s: %s", deleteKey, err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err = NewDbSized(dir, 44)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	value, err = db.Get(deleteKey)
+	if err != ErrNotFound && value != "" {
+		t.Errorf("Get value after it's being deleted and database recreated %s: %s", deleteKey, err)
+	}
+
+	// after deletion active segment should have deleted marked record and return ErrItemDeleted error
+	_, err = db.segments[0].get(deleteKey)
+	if err != ErrItemDeleted {
+		t.Errorf("Value not marked as deleted before merge %s: %s", deleteKey, err)
+	}
+
+	db.merge()
+
+	// after merge record marked as deleted should be removed from segment and index table
+	_, err = db.segments[1].get(deleteKey)
+	if err != nil {
+		t.Errorf("Value exists after merge %s: %s", deleteKey, err)
 	}
 }

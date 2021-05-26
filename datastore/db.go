@@ -16,6 +16,7 @@ import (
 const defMaxActiveSize = 10 * 1024 * 1024
 
 var ErrNotFound = fmt.Errorf("record does not exist")
+var ErrItemDeleted = fmt.Errorf("record has been deleted")
 
 type hashIndex map[string]int64
 
@@ -148,7 +149,11 @@ func (db *Db) Get(key string) (string, error) {
 	)
 
 	for _, segment := range db.segments {
-		if value, err = segment.get(key); err == nil {
+		value, err = segment.get(key)
+		if err == ErrItemDeleted {
+			return "", ErrNotFound
+		}
+		if err == nil {
 			return value, nil
 		}
 	}
@@ -161,8 +166,7 @@ func (db *Db) Put(key, value string) error {
 	e := &entry{ key: key, value: value }
 
 	db.putChan <- putEntry{ entry: e, responseChan: responseChan }
-	res := <- responseChan
-	return res
+	return <- responseChan
 }
 
 func (db *Db) put(pe putEntry) {
@@ -183,7 +187,11 @@ func (db *Db) put(pe putEntry) {
 	}
 
 	activeSegment := db.segments[0]
-	activeSegment.index[e.key] = activeSegment.offset
+	if e.value != "" {
+		activeSegment.index[e.key] = activeSegment.offset
+	} else {
+		activeSegment.index[e.key] = deletedItemPos
+	}
 	activeSegment.offset += int64(n)
 
 	fi, err := os.Stat(activeSegment.path)
@@ -205,6 +213,37 @@ func (db *Db) put(pe putEntry) {
 	}
 
 	pe.responseChan <- nil
+}
+
+// Delete
+// in our database you cannot use empty string "" as valid value, in our case it represents deleted marker for record
+// so Put operation is similar to Delete despite the fact that Delete check whether we have record with provided key
+// in our database, while Put just add delete record to active segment ever if there is no record with provided key
+func (db *Db) Delete(key string) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	for _, segment := range db.segments {
+		pos, ok := segment.index[key]
+		if pos == deletedItemPos {
+			break
+		}
+
+		if ok {
+			e := &entry{key: key, value: ""}
+			n, err := db.out.Write(e.Encode())
+			if err != nil {
+				return err
+			}
+
+			activeSegment := db.segments[0]
+			activeSegment.index[key] = deletedItemPos
+			activeSegment.offset += int64(n)
+			break
+		}
+	}
+
+	return nil
 }
 
 func (db *Db) addSegment() (*segment, error) {
@@ -249,8 +288,10 @@ func (db *Db) merge() {
 
 	for i := len(segments) - 1; i >= 0; i-- {
 		s := segments[i]
-		for k,_ := range segments[i].index {
-			keysSegments[k] = s
+		for k, p := range segments[i].index {
+			if p != deletedItemPos {
+				keysSegments[k] = s
+			}
 		}
 	}
 
@@ -269,18 +310,20 @@ func (db *Db) merge() {
 
 	for k, s := range keysSegments {
 		value, err := s.get(k)
-		e := (&entry{
-			key:   k,
-			value: value,
-		}).Encode()
+		if value != "" && err == nil {
+			e := (&entry{
+				key:   k,
+				value: value,
+			}).Encode()
 
-		n, err := f.Write(e)
-		if err != nil {
-			fmt.Errorf("error occured in merge: %v", err)
-			return
+			n, err := f.Write(e)
+			if err != nil {
+				fmt.Errorf("error occured in merge: %v", err)
+				return
+			}
+			segment.index[k] = segment.offset
+			segment.offset += int64(n)
 		}
-		segment.index[k] = segment.offset
-		segment.offset += int64(n)
 	}
 
 	db.mux.Lock()
@@ -289,6 +332,8 @@ func (db *Db) merge() {
 	db.mux.Unlock()
 
 	for _, s := range segments {
-		os.Remove(s.path)
+		if segmentPath != s.path {
+			os.Remove(s.path)
+		}
 	}
 }
