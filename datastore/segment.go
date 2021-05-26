@@ -60,6 +60,8 @@ func (s *segment) recover() error {
 			var e entry
 			e.Decode(data)
 
+			// we don't need to handle concurrency here, because recover is called before Db creation, and there is no
+			// concurrent access to index(from put, get etc)
 			if e.value == "" {
 				s.index[e.key] = deletedItemPos
 			} else {
@@ -75,6 +77,10 @@ func (s *segment) recover() error {
 func (s *segment) get(key string) (string, error) {
 
 	position, ok := s.index[key]
+
+	if !ok && position != 0 {
+		print()
+	}
 	if !ok {
 		return "", ErrNotFound
 	}

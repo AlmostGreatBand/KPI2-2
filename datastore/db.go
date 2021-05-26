@@ -166,13 +166,11 @@ func (db *Db) Put(key, value string) error {
 	e := &entry{ key: key, value: value }
 
 	db.putChan <- putEntry{ entry: e, responseChan: responseChan }
-	return <- responseChan
+	res := <- responseChan
+	return res
 }
 
 func (db *Db) put(pe putEntry) {
-	db.mux.Lock()
-	defer db.mux.Unlock()
-
 	if len(db.segments) > 2 && db.autoMergeEnabled {
 		go func() {
 			db.mergeChan <- 1
@@ -186,6 +184,10 @@ func (db *Db) put(pe putEntry) {
 		return
 	}
 
+	// we need this lock to be sure that we won't have concurrent read/write from get/put in our map(index)
+	// we could create mutex in every segment and lock it, but have a mutex instance in every segment
+	// is overkill in our opinion, so we decided to lock entire database
+	db.mux.Lock()
 	activeSegment := db.segments[0]
 	if e.value != "" {
 		activeSegment.index[e.key] = activeSegment.offset
@@ -193,6 +195,7 @@ func (db *Db) put(pe putEntry) {
 		activeSegment.index[e.key] = deletedItemPos
 	}
 	activeSegment.offset += int64(n)
+	db.mux.Unlock()
 
 	fi, err := os.Stat(activeSegment.path)
 	if err != nil {
@@ -203,9 +206,8 @@ func (db *Db) put(pe putEntry) {
 	}
 
 	if fi.Size() >= db.activeBlockSize {
-		activeSegment, err = db.addSegment()
+		_, err = db.addSegment()
 		if err != nil {
-			fmt.Errorf("can not create new segment: %v", err)
 			// return nil because we have already put value to db and user shouldn't know about segmentation error
 			pe.responseChan <- nil
 			return
@@ -218,7 +220,7 @@ func (db *Db) put(pe putEntry) {
 // Delete
 // in our database you cannot use empty string "" as valid value, in our case it represents deleted marker for record
 // so Put operation is similar to Delete despite the fact that Delete check whether we have record with provided key
-// in our database, while Put just add delete record to active segment ever if there is no record with provided key
+// in our database, while Put just add delete record to active segment even if there is no record with provided key
 func (db *Db) Delete(key string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
@@ -247,13 +249,25 @@ func (db *Db) Delete(key string) error {
 }
 
 func (db *Db) addSegment() (*segment, error) {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
 	err := db.out.Close()
 	if err != nil {
 		return nil, err
 	}
 
+	segmentSuffix := 0
+	if len(db.segments) > 1 {
+		lastSavedSegmentSuffix := db.segments[1].path[len(db.dir + segmentPrefix) + 1:]
+		if prevSegmentSuffix, err := strconv.Atoi(lastSavedSegmentSuffix); err == nil {
+			segmentSuffix = prevSegmentSuffix + 1
+		}
+	}
+
+	segmentPath := filepath.Join(db.dir, fmt.Sprintf("%v%v", segmentPrefix, segmentSuffix))
 	outputPath := filepath.Join(db.dir, segmentPrefix + activeSuffix)
-	segmentPath := filepath.Join(db.dir, fmt.Sprintf("%v%v", segmentPrefix, len(db.segments) - 1))
+
 	err = os.Rename(outputPath, segmentPath)
 	if err != nil {
 		return nil, err
@@ -295,7 +309,7 @@ func (db *Db) merge() {
 		}
 	}
 
-	segmentPath := filepath.Join(db.dir, segmentPrefix + mergedSuffix)
+	segmentPath := filepath.Join(db.dir, segmentPrefix)
 	f, err := os.OpenFile(segmentPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		fmt.Errorf("error occured in merge: %v", err)
@@ -327,12 +341,22 @@ func (db *Db) merge() {
 	}
 
 	db.mux.Lock()
+
+	mergedPath := segmentPath + mergedSuffix
+	err = os.Rename(segmentPath, mergedPath)
+	if err != nil {
+		db.mux.Unlock()
+		fmt.Errorf("cannot merge files: %v", err)
+		return
+	}
+	segment.path = mergedPath
 	to := len(db.segments) - len(segments)
 	db.segments = append(db.segments[:to], segment)
+
 	db.mux.Unlock()
 
 	for _, s := range segments {
-		if segmentPath != s.path {
+		if mergedPath != s.path {
 			os.Remove(s.path)
 		}
 	}
