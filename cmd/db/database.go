@@ -2,87 +2,85 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"flag"
+	"github.com/AlmostGreatBand/KPI2-2/cmd/common"
 	"github.com/AlmostGreatBand/KPI2-2/datastore"
+	"github.com/AlmostGreatBand/KPI2-2/httptools"
+	"github.com/AlmostGreatBand/KPI2-2/signal"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
-	"time"
 )
 
-type DbRequest struct {
-	value string
-}
-
-type DbResponse struct {
-	key string
-	value string
-}
+var port = flag.Int("port", 8080, "server port")
+var dir = flag.String("dir", ".", "database storage dir")
 
 func main() {
 	h := new(http.ServeMux)
-	db, err := datastore.NewDb("database/agb")
+	db, err := datastore.NewDb(*dir)
 	if err != nil {
-		fmt.Errorf("cannot create database instance: %v", err)
-		return
-	}
-
-	err = db.Put("agb", time.Now().Format("2006-01-02"))
-	if err != nil {
-		fmt.Errorf("cannot put value to database: %v", err)
+		log.Printf("cannot create database instance: %v\n", err)
 		return
 	}
 
 	h.HandleFunc("/db/", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
 		key := strings.TrimPrefix(r.URL.Path, "/db/")
 		if r.Method == http.MethodGet {
 			value, err := db.Get(key)
 			if err == datastore.ErrNotFound || value == "" {
-				fmt.Errorf("cannot find record: %v", err)
+				log.Printf("cannot find record: %v\n", err)
 				rw.WriteHeader(http.StatusNotFound)
 				return
 			}
 			if err != nil {
-				fmt.Errorf("cannot get record: %v", err)
+				log.Printf("cannot get record: %v\n", err)
 				rw.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 
-			b, err := json.Marshal(DbResponse{key: key, value: value})
+			b, err := json.Marshal(models.DbResponse{Key: key, Value: value})
 			if err != nil {
-				fmt.Errorf("cannot create json: %v", err)
+				log.Printf("cannot create json: %v\n", err)
 				rw.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 			_, err = rw.Write(b)
 			if err != nil {
-				fmt.Errorf("cannot write response to rw: %v", err)
-				rw.WriteHeader(http.StatusInternalServerError)
+				log.Printf("cannot write response to rw: %v", err)
 				return
 			}
-			rw.WriteHeader(http.StatusOK)
 		} else if r.Method == http.MethodPost {
 			body, err := ioutil.ReadAll(r.Body)
+			defer r.Body.Close()
+
 			if err != nil {
-				fmt.Errorf("cannot read request body: %v", err)
+				log.Printf("cannot read request body: %v", err)
 				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			var req DbRequest
+			var req models.DbRequest
 			err = json.Unmarshal(body, &req)
 			if err != nil {
-				fmt.Errorf("cannot read request body: %v", err)
+				log.Printf("cannot read request body: %v", err)
 				rw.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			err = db.Put(key, req.value)
+			err = db.Put(key, req.Value)
 			if err != nil {
-				fmt.Errorf("cannot put value to database: %v", err)
+				log.Printf("cannot put value to database: %v", err)
 				rw.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+
+			rw.WriteHeader(http.StatusOK)
 		}
 	})
+
+	server := httptools.CreateServer(*port, h)
+	server.Start()
+	signal.WaitForTerminationSignal()
 }

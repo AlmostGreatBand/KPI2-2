@@ -2,6 +2,7 @@ tested_binary {
   name: "server",
   pkg: "./cmd/server",
   srcs: [
+    "cmd/common/*.go",
     "httptools/**/*.go",
     "signal/**/*.go",
     "cmd/server/*.go"
@@ -20,6 +21,20 @@ tested_binary {
   ],
   testPkg: "./cmd/lb",
   testSrcs: ["./cmd/lb/*_test.go"]
+}
+
+tested_binary {
+  name: "db",
+  pkg: "./cmd/db",
+  srcs: [
+    "cmd/common/*.go",
+    "httptools/**/*.go",
+    "signal/**/*.go",
+    "cmd/db/*.go",
+    "datastore/*.go"
+  ],
+  testPkg: "./datastore",
+  testSrcs: ["./datastore/*_test.go"]
 }
 
 tested_binary {
