@@ -1,8 +1,11 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
+	models "github.com/AlmostGreatBand/KPI2-2/cmd/common"
 	"github.com/stretchr/testify/assert"
+	"io/ioutil"
 	"net/http"
 	"testing"
 	"time"
@@ -15,41 +18,33 @@ var client = http.Client{
 }
 
 func TestBalancer(t *testing.T) {
-	/*
-		there is no proper way to test this algorithm(with the least connections)
-		I've tried manually test this algorithm with 900 ms client delay, and 3 s server delay
-		check this here
-		https://docs.google.com/spreadsheets/d/1ZjhszAWXc9_hmWr7m9g-Z32HDHwIvSzkUklp81oPRUg/edit?usp=sharing
-	 */
-
-	serverUrls := []string {
-		"server1:8080",
-		"server2:8080",
-		"server3:8080",
-	}
-
-	expectedResults := []int32 { 0, 1, 2, 0, 0, 1, 2, 0, 0, 1 }
-
-	serverNames := make(chan string, len(expectedResults))
-
-	for range expectedResults {
+	resChan := make(chan models.DbResponse)
+	for i := 0; i < 10; i++  {
 		go func() {
-			resp, err := client.Get(fmt.Sprintf("%s/api/v1/some-data", baseAddress))
+			resp, err := client.Get(fmt.Sprintf("%s/api/v1/some-data?key=agb", baseAddress))
 
 			if resp == nil || resp.StatusCode != http.StatusOK || err != nil {
 				t.Logf("error %s", err)
 			}
 
-			server := resp.Header.Get("lb-from")
-			t.Logf("response from [%s]", server)
-			serverNames <- server
+			respBody, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				t.Logf("Cannot read response body: %v", err)
+			}
+
+			var dbResp models.DbResponse
+			err = json.Unmarshal(respBody, &dbResp)
+			if err != nil {
+				t.Logf("Cannot parse respBody to json: %v", err)
+			}
+			resChan <- dbResp
+			resp.Body.Close()
 		}()
-		time.Sleep(900 * time.Millisecond)
 	}
 
-	for _, i := range expectedResults {
-		server := <- serverNames
-		assert.Equal(t, server, serverUrls[i])
+	for i := 0; i < 10; i++ {
+		value := <- resChan
+		assert.Equal(t, value.Value, time.Now().Format("2006-01-02"))
 	}
 }
 
