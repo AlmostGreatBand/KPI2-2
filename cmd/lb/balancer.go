@@ -143,7 +143,7 @@ func (sp *ServerPool) getMinConnectionsAvailable() (int, error) {
 	}
 
 	if filtered == nil {
-		return 0, errors.New("no available servers")
+		return -1, errors.New("no available servers")
 	}
 
 	minIndex := filtered[0]
