@@ -27,4 +27,10 @@ func TestReadValue(t *testing.T) {
 	if v != "test-value" {
 		t.Errorf("Got bat value [%s]", v)
 	}
+
+	deleted := e.EncodeDeleted()
+	_, err = readValue(bufio.NewReader(bytes.NewReader(deleted)))
+	if err != ErrItemDeleted {
+		t.Fatal("item should be deleted")
+	}
 }

@@ -112,15 +112,15 @@ func main() {
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		fmt.Println(serverPool.toString())
 
-		server, err := serverPool.getMinConnectionsAvailable()
+		serverIndex, err := serverPool.getMinConnectionsAvailable()
 		if err != nil {
 			fmt.Print(err.Error())
 			return
 		}
 
-		server.Connections++
-		forward(server.Url, rw, r)
-		server.Connections--
+		serverPool.inc(serverIndex)
+		forward(serverPool.Servers[serverIndex].Url, rw, r)
+		serverPool.dec(serverIndex)
 	}))
 
 	log.Println("Starting load balancer...")
@@ -129,28 +129,44 @@ func main() {
 	signal.WaitForTerminationSignal()
 }
 
-func (sp *ServerPool) getMinConnectionsAvailable() (*Server, error) {
+func (sp *ServerPool) getMinConnectionsAvailable() (int, error) {
 	sp.Mutex.Lock()
 	defer sp.Mutex.Unlock()
 
-	var filtered []*Server
-	for _, server := range sp.Servers {
+	servers := sp.Servers
+
+	var filtered []int
+	for index, server := range servers {
 		if server.Available {
-			filtered = append(filtered, server)
+			filtered = append(filtered, index)
 		}
 	}
 
 	if filtered == nil {
-		return nil, errors.New("no available servers")
+		return -1, errors.New("no available servers")
 	}
 
-	min := filtered[0]
+	minIndex := filtered[0]
 
-	for _, server := range filtered[1:] {
-		if server.Connections < min.Connections {
-			min = server
+	for _, serverIndex := range filtered[1:] {
+		if servers[serverIndex].Connections < servers[minIndex].Connections {
+			minIndex = serverIndex
 		}
 	}
 
-	return min, nil
+	return minIndex, nil
+}
+
+func (sp *ServerPool) inc(index int) {
+	sp.Mutex.Lock()
+	defer sp.Mutex.Unlock()
+
+	sp.Servers[index].Connections++
+}
+
+func (sp *ServerPool) dec(index int) {
+	sp.Mutex.Lock()
+	defer sp.Mutex.Unlock()
+
+	sp.Servers[index].Connections--
 }

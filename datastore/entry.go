@@ -23,16 +23,33 @@ func (e *entry) Encode() []byte {
 	return res
 }
 
-func (e *entry) Decode(input []byte) {
+func (e *entry) EncodeDeleted() []byte {
+	kl := len(e.key)
+	vl := deletedValueLength
+	size := kl + 12
+	res := make([]byte, size)
+	binary.LittleEndian.PutUint32(res, uint32(size))
+	binary.LittleEndian.PutUint32(res[4:], uint32(kl))
+	copy(res[8:], e.key)
+	binary.LittleEndian.PutUint32(res[kl+8:], uint32(vl))
+	return res
+}
+
+func (e *entry) Decode(input []byte) error {
 	kl := binary.LittleEndian.Uint32(input[4:])
 	keyBuf := make([]byte, kl)
 	copy(keyBuf, input[8:kl+8])
 	e.key = string(keyBuf)
 
 	vl := binary.LittleEndian.Uint32(input[kl+8:])
+	if int32(vl) == deletedValueLength {
+		return ErrItemDeleted
+	}
 	valBuf := make([]byte, vl)
 	copy(valBuf, input[kl+12:kl+12+vl])
 	e.value = string(valBuf)
+
+	return nil
 }
 
 func readValue(in *bufio.Reader) (string, error) {
@@ -50,7 +67,12 @@ func readValue(in *bufio.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	valSize := int(binary.LittleEndian.Uint32(header))
+
+	valSize := int32(binary.LittleEndian.Uint32(header))
+	if valSize == deletedValueLength {
+		return "", ErrItemDeleted
+	}
+
 	_, err = in.Discard(4)
 	if err != nil {
 		return "", err
@@ -61,7 +83,7 @@ func readValue(in *bufio.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if n != valSize {
+	if n != int(valSize) {
 		return "", fmt.Errorf("can't read value bytes (read %d, expected %d)", n, valSize)
 	}
 
