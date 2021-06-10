@@ -286,8 +286,8 @@ func TestDb_Delete(t *testing.T) {
 		t.Errorf("Cannot delete %s: %s", deleteKey, err)
 	}
 
-	value, err := db.Get(deleteKey)
-	if err != ErrNotFound && value != "" {
+	_, err = db.Get(deleteKey)
+	if err != ErrNotFound {
 		t.Errorf("Get value after it's being deleted %s: %s", deleteKey, err)
 	}
 
@@ -305,8 +305,8 @@ func TestDb_Delete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value, err = db.Get(deleteKey)
-	if err != ErrNotFound && value != "" {
+	_, err = db.Get(deleteKey)
+	if err != ErrNotFound {
 		t.Errorf("Get value after it's being deleted and database recreated %s: %s", deleteKey, err)
 	}
 

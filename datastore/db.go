@@ -122,10 +122,6 @@ func NewDbSizedMerge(dir string, activeBlockSize int64, autoMergeEnabled bool) (
 
 	go func() {
 		for el := range putChan {
-			if el.entry == nil {
-				return
-			}
-
 			db.put(el)
 		}
 	}()
@@ -135,7 +131,7 @@ func NewDbSizedMerge(dir string, activeBlockSize int64, autoMergeEnabled bool) (
 
 func (db *Db) Close() error {
 	db.mergeChan <- 0
-	db.putChan <- putEntry{ entry: nil }
+	close(db.putChan)
 	return db.out.Close()
 }
 
@@ -217,10 +213,6 @@ func (db *Db) put(pe putEntry) {
 	pe.responseChan <- nil
 }
 
-// Delete
-// in our database you cannot use empty string "" as valid value, in our case it represents deleted marker for record
-// so Put operation is similar to Delete despite the fact that Delete check whether we have record with provided key
-// in our database, while Put just add delete record to active segment even if there is no record with provided key
 func (db *Db) Delete(key string) error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
@@ -232,8 +224,8 @@ func (db *Db) Delete(key string) error {
 		}
 
 		if ok {
-			e := &entry{key: key, value: ""}
-			n, err := db.out.Write(e.Encode())
+			e := &entry{key: key}
+			n, err := db.out.Write(e.EncodeDeleted())
 			if err != nil {
 				return err
 			}

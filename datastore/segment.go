@@ -13,6 +13,7 @@ const mergedSuffix = "merged"
 const segmentPrefix = "segment-"
 const bufSize = 8192
 const deletedItemPos = -1
+const deletedValueLength = -1
 
 type segment struct {
 	path   string
@@ -58,11 +59,11 @@ func (s *segment) recover() error {
 			}
 
 			var e entry
-			e.Decode(data)
+			deletedErr := e.Decode(data)
 
 			// we don't need to handle concurrency here, because recover is called before Db creation, and there is no
 			// concurrent access to index(from put, get etc)
-			if e.value == "" {
+			if deletedErr != nil {
 				s.index[e.key] = deletedItemPos
 			} else {
 				s.index[e.key] = s.offset
